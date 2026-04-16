@@ -1,0 +1,3 @@
+this is an incredibly simple plaintext*-to-html converter with some built-in
+functionality like page linking and header formatting. please compile the
+`sources/entry.c` file to compile the project.
