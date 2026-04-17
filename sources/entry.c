@@ -1,5 +1,3 @@
-#error I have not implemented anything useful yet.
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -7,15 +5,27 @@
 #include <stdbool.h>
 
 #include <sys/stat.h>
+#include <errno.h>
 #include <dirent.h>
 
 char* title;
+size_t titleLength;
+
 char* description;
+size_t descriptionLength;
+
 char* author;
+size_t authorLength;
+
+char* license;
+size_t licenseLength;
 
 size_t chapterCount;
 char** chapters;
-char** chapterTexts;
+struct {
+    size_t length;
+    char* body;
+}* chapterTexts;
 
 void printUsage(const char* const argv0)
 {
@@ -71,20 +81,32 @@ void processMetadata(const char* const path, size_t pathLength)
     fclose(metadata);
 
     char* endOfLine = strchr(fileContents, '\n');
-    off_t difference = endOfLine - fileContents;
-    author = strndup(fileContents, difference);
+    authorLength = endOfLine - fileContents;
+    author = strndup(fileContents, authorLength);
     if(author == NULL)
     {
         perror("Failed to copy author string");
         exit(EXIT_FAILURE);
     }
 
-    description = strndup(endOfLine + 1, stats.st_size - difference - 1);
+    char* endOfLine2 = strchr(endOfLine + 1, '\n');
+    descriptionLength = endOfLine2 - endOfLine - 1;
+    description = strndup(endOfLine + 1, descriptionLength);
     if(description == NULL)
     {
         perror("Failed to copy description string");
         exit(EXIT_FAILURE);
     }
+
+    licenseLength = stats.st_size - (endOfLine2 - fileContents) - 1;
+    license = strndup(endOfLine2 + 1, licenseLength);
+    if(license == NULL)
+    {
+        perror("Failed to copy license string");
+        exit(EXIT_FAILURE);
+    }
+
+    printf("%s\n%s\n%s\n%s\n", title, author, description, license);
 }
 
 void processChapters(const char* const path, size_t pathLength)
@@ -115,13 +137,21 @@ void processChapters(const char* const path, size_t pathLength)
     }
 }
 
+void outputBook(char* outputDirectoryPath)
+{
+    // TODO: This.
+    (void)outputDirectoryPath;
+}
+
 int processBook(const char* const path)
 {
-    title = (char*)strrchr(path, '/');
+    title = (char*)strrchr(path, '/') + 1;
     if(title == NULL)
     {
         title = (char*)path;
     }
+    title = strndup(title, strrchr(title, '.') - title);
+    titleLength = strlen(title);
 
     bool gotMetadata = false;
     bool gotChapters = false;
@@ -129,7 +159,7 @@ int processBook(const char* const path)
     DIR* inputDirectory = opendir(path);
     if(inputDirectory == NULL)
     {
-        perror("Failed to create output directory");
+        perror("Failed to open input directory");
         return 1;
     }
 
@@ -180,20 +210,14 @@ int processBook(const char* const path)
         return 1;
     }
 
-    if(mkdir(title, 0777) != 0)
+    int code = mkdir(title, 0777);
+    if(code != 0 && errno != EEXIST)
     {
         perror("Failed to create output directory");
         return 1;
     }
 
-    DIR* outputDirectory = opendir(title);
-    if(outputDirectory == NULL)
-    {
-        perror("Failed to open output directory");
-        return 1;
-    }
-
-    closedir(outputDirectory);
+    outputBook(title);
     return 0;
 }
 
