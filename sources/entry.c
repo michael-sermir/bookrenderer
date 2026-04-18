@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#include <unistd.h>
 #include <sys/stat.h>
 #include <errno.h>
 #include <dirent.h>
@@ -36,7 +37,10 @@ char* license;
 size_t licenseLength;
 
 size_t chapterCount;
-char** chapters;
+struct {
+    size_t length;
+    char* title;
+}* chapterTitles;
 struct {
     size_t length;
     char* body;
@@ -170,8 +174,8 @@ void processChapters(const char* const path, size_t pathLength)
         exit(EXIT_FAILURE);
     }
 
-    chapters = malloc(sizeof(char*) * 99);
-    if(chapters == NULL)
+    chapterTitles = malloc(sizeof(*chapterTitles) * 99);
+    if(chapterTitles == NULL)
     {
         perror("Failed to allocate chapter array");
         exit(EXIT_FAILURE);
@@ -195,15 +199,15 @@ void processChapters(const char* const path, size_t pathLength)
         
         uint8_t chapterIndex = ((*entry->d_name - 0x30) * 10) +
             (*(entry->d_name + 1) - 0x30);
-        size_t chapterNameLength = strlen(entry->d_name);
-        chapters[chapterIndex] = strndup(entry->d_name + 3,
-            chapterNameLength - 3);
+        chapterTitles[chapterIndex].length = strlen(entry->d_name);
+        chapterTitles[chapterIndex].title = strndup(entry->d_name,
+            chapterTitles[chapterIndex].length);
 
-        char chapterPath[pathLength + chapterNameLength + 11];
+        char chapterPath[pathLength + chapterTitles[chapterIndex].length + 11];
         memcpy(chapterPath, chaptersPath, pathLength + 9);
         chapterPath[pathLength + 9] = '/';
-        memcpy(chapterPath + pathLength + 10, entry->d_name, chapterNameLength);
-        chapterPath[pathLength + chapterNameLength + 10] = 0;
+        memcpy(chapterPath + pathLength + 10, entry->d_name, chapterTitles[chapterIndex].length);
+        chapterPath[pathLength + chapterTitles[chapterIndex].length + 10] = 0;
 
         FILE* chapterFile = fopen(chapterPath, "rb");
         if(chapterFile == NULL)
@@ -237,10 +241,81 @@ void processChapters(const char* const path, size_t pathLength)
     }
 }
 
+void outputHeader(FILE* file)
+{
+    fwrite("<!DOCTYPE html><html><head><title>", 1, 34, file);
+    fwrite(site, 1, siteLength, file);
+    fwrite("</title><meta name=\"color-scheme\" content=\"dark\"></head><body style=\"font-family:monospace;padding:1%\"><h1 style=\"padding:0;margin:0\">", 1, 134, file);
+    fwrite(site, 1, siteLength, file);
+    fwrite("</h1><span>", 1, 11, file);
+
+    for(size_t i = 0; i < linkCount; ++i)
+    {
+        fwrite("<a href=\"", 1, 9, file);
+        fwrite(links[i].page, 1, links[i].pageLength, file);
+        fwrite("\" style=\"color:initial\">", 1, 24, file);
+        fwrite(links[i].title, 1, links[i].titleLength, file);
+        fwrite("</a> ", 1, 5, file);
+    }
+
+    fwrite("</span>", 1, 7, file);
+}
+
 void outputBook(char* outputDirectoryPath)
 {
-    // TODO: This.
-    (void)outputDirectoryPath;
+    if(chdir(outputDirectoryPath) != 0)
+    {
+        perror("Failed to cd into output directory");
+        exit(EXIT_FAILURE);
+    }
+
+    FILE* indexFile = fopen("index.html", "wb");
+    if(indexFile == NULL)
+    {
+        perror("Failed to create index.html file");
+        exit(EXIT_FAILURE);
+    }
+
+    outputHeader(indexFile);
+
+    fwrite("<p style=\"margin-bottom:20px\">", 1, 30, indexFile);
+    fwrite(title, 1, titleLength, indexFile);
+    fwrite(" index! (<a href=\"", 1, 18, indexFile);
+    fwrite(root, 1, rootLength, indexFile);
+    fwrite("\" style=\"color:initial\">back</a>)</p><p>table of contents:</p><ol>", 1, 66, indexFile);
+
+    for(size_t i = 0; i < chapterCount; ++i)
+    {
+        fwrite("<li><a href=\"./", 1, 15, indexFile);
+        fwrite(chapterTitles[i].title, 1, chapterTitles[i].length, indexFile);
+        fwrite(".html\" style=\"color:initial\">", 1, 29, indexFile);
+
+        char* wordStart = chapterTitles[i].title + 3;
+        char* wordEnd = (char*)strchr(wordStart, '_');
+        do
+        {
+            if(wordEnd != NULL)
+            {
+                fwrite(wordStart, 1, wordEnd - wordStart, indexFile);
+                fwrite(" ", 1, 1, indexFile);
+            }
+            else
+            {
+                fwrite(wordStart, 1, chapterTitles[i].length - (wordStart -
+                    chapterTitles[i].title), indexFile);
+                break;
+            }
+
+            wordStart = wordEnd + 1;
+            wordEnd = (char*)strchr(wordStart, '_');
+        }
+        while(true);
+        fwrite("</a></li>", 1, 9, indexFile);
+    }
+
+    fwrite("</ol></body></html>", 1, 19, indexFile);
+
+    fclose(indexFile);
 }
 
 int processBook(const char* const path)
