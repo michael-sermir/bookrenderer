@@ -290,6 +290,21 @@ void outputBook(char* outputDirectoryPath)
         fwrite(chapterTitles[i].title, 1, chapterTitles[i].length, indexFile);
         fwrite(".html\" style=\"color:initial\">", 1, 29, indexFile);
 
+        char chapterFilename[chapterTitles[i].length + 6];
+        memcpy(chapterFilename, chapterTitles[i].title, chapterTitles[i].length);
+        memcpy(chapterFilename + chapterTitles[i].length, ".html", 5);
+        chapterFilename[chapterTitles[i].length + 5] = 0;
+
+        FILE* chapterFile = fopen(chapterFilename, "wb");
+        if(chapterFile == NULL)
+        {
+            perror("Unable to open chapter file");
+            exit(EXIT_FAILURE);
+        }
+
+        outputHeader(chapterFile);
+        fwrite("<p style=\"margin-bottom:20px\">", 1, 30, chapterFile);
+
         char* wordStart = chapterTitles[i].title + 3;
         char* wordEnd = (char*)strchr(wordStart, '_');
         do
@@ -298,11 +313,15 @@ void outputBook(char* outputDirectoryPath)
             {
                 fwrite(wordStart, 1, wordEnd - wordStart, indexFile);
                 fwrite(" ", 1, 1, indexFile);
+                fwrite(wordStart, 1, wordEnd - wordStart, chapterFile);
+                fwrite(" ", 1, 1, chapterFile);
             }
             else
             {
                 fwrite(wordStart, 1, chapterTitles[i].length - (wordStart -
                     chapterTitles[i].title), indexFile);
+                fwrite(wordStart, 1, chapterTitles[i].length - (wordStart -
+                    chapterTitles[i].title), chapterFile);
                 break;
             }
 
@@ -311,10 +330,61 @@ void outputBook(char* outputDirectoryPath)
         }
         while(true);
         fwrite("</a></li>", 1, 9, indexFile);
+
+        fwrite("! (<a href=\"", 1, 12, chapterFile);
+        if(i == 0)
+            fwrite("./index.html\" style=\"color:initial\">back</a>)", 1, 45, chapterFile);
+        else
+            fprintf(chapterFile, "./%s.html\" style=\"color:initial\">back</a>)", chapterTitles[i - 1].title);
+        fwrite(" (<a href=\"index.html\" style=\"color:initial\">root</a>)</p><div style=\"width:80ch;overflow-wrap:break-word\">", 1, 107, chapterFile);
+
+        char* paragraphStart = chapterTexts[i].body;
+        char* paragraphEnd = strstr(paragraphStart, "\n\n");
+        do
+        {
+            fwrite("<p>", 1, 3, chapterFile);
+
+            char* lineStart = paragraphStart;
+            char* lineEnd = strchr(paragraphStart, '\n');
+            do
+            {
+                if(lineEnd != NULL && lineEnd != paragraphEnd)
+                {
+                    fwrite(lineStart, 1, lineEnd - lineStart, chapterFile);
+                    fwrite(" ", 1, 1, chapterFile);
+                }
+                else
+                {
+                    if(paragraphEnd == NULL)
+                    {
+                        fwrite(lineStart, 1, chapterTexts[i].length - (lineStart - chapterTexts[i].body), chapterFile);
+                    }
+                    else
+                    {
+                        fwrite(lineStart, 1, paragraphEnd - lineStart, chapterFile);
+                    }
+                    fwrite("</p>", 1, 4, chapterFile);
+                    break;
+                }
+
+                lineStart = lineEnd + 1;
+                lineEnd = strchr(lineStart, '\n');
+            }
+            while(true);
+
+            if(paragraphEnd == NULL)
+                break;
+
+            paragraphStart = paragraphEnd + 2;
+            paragraphEnd = strstr(paragraphStart, "\n\n");
+        }
+        while(true);
+        fwrite("</div>", 1, 6, chapterFile);
+
+        fclose(chapterFile);
     }
 
     fwrite("</ol></body></html>", 1, 19, indexFile);
-
     fclose(indexFile);
 }
 
