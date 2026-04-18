@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdbool.h>
 
 #include <sys/stat.h>
@@ -105,8 +106,6 @@ void processMetadata(const char* const path, size_t pathLength)
         perror("Failed to copy license string");
         exit(EXIT_FAILURE);
     }
-
-    printf("%s\n%s\n%s\n%s\n", title, author, description, license);
 }
 
 void processChapters(const char* const path, size_t pathLength)
@@ -115,25 +114,81 @@ void processChapters(const char* const path, size_t pathLength)
     memcpy(chaptersPath, path, pathLength);
     memcpy(chaptersPath + pathLength, "/chapters", 10);
 
-    DIR* chapters = opendir(chaptersPath);
-    if(chapters == NULL)
+    DIR* chapterDirectory = opendir(chaptersPath);
+    if(chapterDirectory == NULL)
     {
         perror("Failed to open the chapters directory");
         exit(EXIT_FAILURE);
     }
 
+    chapters = malloc(sizeof(char*) * 99);
+    if(chapters == NULL)
+    {
+        perror("Failed to allocate chapter array");
+        exit(EXIT_FAILURE);
+    }
+    chapterTexts = malloc((sizeof(size_t) + sizeof(char*)) * 99);
+    if(chapterTexts == NULL)
+    {
+        perror("Failed to allocate chapter text array");
+        exit(EXIT_FAILURE);
+    }
+
     struct dirent* entry;
-    while((entry = readdir(chapters)) != NULL)
+    while((entry = readdir(chapterDirectory)) != NULL)
     {
         if(strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
         {
             continue;
         }
 
-        // TODO: Implement logic here to detect the chapter number and store it
-        // in the chapter names and contents arrays by that index, that way we
-        // can easily scan for holes and more easily link chapters once we
-        // implement that.
+        chapterCount++;
+        
+        uint8_t chapterIndex = ((*entry->d_name - 0x30) * 10) +
+            (*(entry->d_name + 1) - 0x30);
+        printf("%u\n", chapterIndex);
+        size_t chapterNameLength = strlen(entry->d_name);
+        chapters[chapterIndex] = strndup(entry->d_name + 3,
+            chapterNameLength - 3);
+
+        char chapterPath[pathLength + chapterNameLength + 11];
+        memcpy(chapterPath, chaptersPath, pathLength + 9);
+        chapterPath[pathLength + 9] = '/';
+        memcpy(chapterPath + pathLength + 10, entry->d_name, chapterNameLength);
+        chapterPath[pathLength + chapterNameLength + 10] = 0;
+
+        FILE* chapterFile = fopen(chapterPath, "rb");
+        if(chapterFile == NULL)
+        {
+            perror("Failed to open chapter file");
+            exit(EXIT_FAILURE);
+        }
+
+        struct stat stats;
+        if(fstat(fileno(chapterFile), &stats) != 0)
+        {
+            perror("Failed to stat chapter file");
+            exit(EXIT_FAILURE);
+        }
+
+        chapterTexts[chapterIndex].length = stats.st_size;
+        chapterTexts[chapterIndex].body = malloc(stats.st_size + 1);
+        if(chapterTexts[chapterIndex].body == NULL)
+        {
+            perror("Failed to allocate chapter text");
+            exit(EXIT_FAILURE);
+        }
+
+        if(fread(chapterTexts[chapterIndex].body, 1, stats.st_size, chapterFile) != stats.st_size)
+        {
+            perror("Failed to read from chapter file");
+            exit(EXIT_FAILURE);
+        }
+        chapterTexts[chapterIndex].body[stats.st_size] = 0;
+        fclose(chapterFile);
+
+        printf("%s\n%s\n---------------\n", chapters[chapterIndex],
+            chapterTexts[chapterIndex].body);
     }
 }
 
