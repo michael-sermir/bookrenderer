@@ -9,6 +9,20 @@
 #include <errno.h>
 #include <dirent.h>
 
+char* site;
+size_t siteLength;
+
+char* root;
+size_t rootLength;
+
+size_t linkCount;
+struct {
+    size_t titleLength;
+    char* title;
+    size_t pageLength;
+    char* page;
+}* links;
+
 char* title;
 size_t titleLength;
 
@@ -30,11 +44,10 @@ struct {
 
 void printUsage(const char* const argv0)
 {
-    (void)printf("Usage: %s [OPTIONS] book\n", argv0);
+    (void)printf("Usage: %s [OPTIONS] <sitemap> <book>\n", argv0);
     (void)puts(
         "Options:\n"
-        "    --help: Display this help message and exit.\n"
-        "    --site [sitemap]: Specify a sitemap file."
+        "    --help: Display this help message and exit."
     );
 }
 
@@ -47,7 +60,43 @@ void processSitemap(const char* const path)
         exit(EXIT_FAILURE);
     }
 
-    // TODO: This.
+    struct stat stats;
+    if(fstat(fileno(map), &stats) != 0)
+    {
+        perror("Failed to stat map file");
+        exit(EXIT_FAILURE);
+    }
+    
+    char fileContents[stats.st_size + 1];
+    fread(fileContents, 1, stats.st_size, map);
+    fileContents[stats.st_size] = 0;
+
+    char* endOfLine = (char*)strchr(fileContents, '\n');
+    siteLength = endOfLine - fileContents;
+    site = strndup(fileContents, siteLength);
+
+    char* endOfLine2 = (char*)strchr(endOfLine + 1, '\n');
+    rootLength = endOfLine2 - endOfLine - 1;
+    root = strndup(endOfLine + 1, rootLength);
+
+    for(char* endOfNextLine = (char*)strchr(endOfLine2 + 1, '\n'),
+        *endOfLastLine = endOfLine2 + 1; endOfNextLine != NULL;)
+    {
+        linkCount++;
+        if(linkCount == 1)
+            links = malloc(sizeof(*links));
+        else
+            links = realloc(links, sizeof(*links) * linkCount);
+
+        char* endOfTitle = strchr(endOfLastLine, ' ');
+        links[linkCount - 1].titleLength = endOfTitle - endOfLastLine;
+        links[linkCount - 1].title = strndup(endOfLastLine, links[linkCount - 1].titleLength);
+
+        endOfLastLine = endOfNextLine + 1;
+        endOfNextLine = (char*)strchr(endOfLastLine, '\n');
+        links[linkCount - 1].pageLength = endOfLastLine - endOfTitle - 2;
+        links[linkCount - 1].page = strndup(endOfTitle + 1, links[linkCount - 1].pageLength);
+    }
 
     (void)fclose(map);
 }
@@ -146,7 +195,6 @@ void processChapters(const char* const path, size_t pathLength)
         
         uint8_t chapterIndex = ((*entry->d_name - 0x30) * 10) +
             (*(entry->d_name + 1) - 0x30);
-        printf("%u\n", chapterIndex);
         size_t chapterNameLength = strlen(entry->d_name);
         chapters[chapterIndex] = strndup(entry->d_name + 3,
             chapterNameLength - 3);
@@ -186,9 +234,6 @@ void processChapters(const char* const path, size_t pathLength)
         }
         chapterTexts[chapterIndex].body[stats.st_size] = 0;
         fclose(chapterFile);
-
-        printf("%s\n%s\n---------------\n", chapters[chapterIndex],
-            chapterTexts[chapterIndex].body);
     }
 }
 
@@ -278,38 +323,27 @@ int processBook(const char* const path)
 
 int main(int argc, char** argv)
 {
-    if(argc <= 1)
+    if(argc != 3)
     {
-        (void)fputs("Didn't get a book name.\n", stderr);
+        (void)fputs("Malformed arguments.\n", stderr);
         printUsage(argv[0]);
         return 1;
     }
 
     int i = 1;
-    for(; i < argc - 1; ++i)
+    for(; i < argc - 2; ++i)
     {
         if(strcmp(argv[i], "--help") == 0)
         {
             printUsage(argv[0]);
             return 0;
         }
-        else if(strcmp(argv[i], "--site") == 0)
-        {
-            i++;
-            if(i >= argc)
-            {
-                (void)fputs("Given a sitemap option with no filepath.\n", stderr);
-                return 1;
-            }
-
-            processSitemap(argv[i]);
-            continue;
-        }
 
         (void)fputs("Unrecognized argument provided.\n", stderr);
         return 1;
     }
 
-    return processBook(argv[i]);
+    processSitemap(argv[i]);
+    return processBook(argv[i + 1]);
 }
 
