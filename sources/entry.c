@@ -340,30 +340,94 @@ void outputBook(char* outputDirectoryPath)
 
         char* paragraphStart = chapterTexts[i].body;
         char* paragraphEnd = strstr(paragraphStart, "\n\n");
+        if(paragraphEnd == NULL)
+            paragraphEnd = chapterTexts[i].body + chapterTexts[i].length - 1;
+
         do
         {
-            fwrite("<p>", 1, 3, chapterFile);
-
             char* lineStart = paragraphStart;
             char* lineEnd = strchr(paragraphStart, '\n');
+
+            bool codegraph = false;
+            bool linkgraph = false;
+            if (*lineStart == '[' && *(lineStart + 1) == '<')
+            {
+                lineStart += 2;
+                char* insetEnd = strchr(lineStart, ':');
+
+                if(strncmp(lineStart, "code:", insetEnd - lineStart) == 0)
+                {
+                    fwrite("<pre><code type=\"", 1, 17, chapterFile);
+                    codegraph = true;
+
+                    char* typeStart = lineStart + 5;
+                    char* typeEnd = strchr(typeStart, '>');
+                    if(typeEnd == NULL)
+                    {
+                        fputs("Failed to find end for code type.\n", stderr);
+                        exit(EXIT_FAILURE);
+                    }
+
+                    fwrite(typeStart, 1, typeEnd - typeStart, chapterFile);
+                    fwrite("\">", 1, 2, chapterFile);
+                }
+                else if(strncmp(lineStart, "next:", insetEnd - lineStart) == 0)
+                {
+                    linkgraph = true;
+                    fwrite("<p>", 1, 3, chapterFile);
+                }
+                else
+                {
+                    fprintf(stderr, "Unrecognized inset type '%.*s'.\n", (int)(insetEnd- lineStart), lineStart);
+                    exit(EXIT_FAILURE);
+                }
+
+                paragraphStart = lineEnd + 1;
+                lineStart = paragraphStart;
+                lineEnd = strchr(paragraphStart, '\n');
+            }
+            else
+                fwrite("<p>", 1, 3, chapterFile);
+
             do
             {
                 if(lineEnd != NULL && lineEnd != paragraphEnd)
                 {
                     fwrite(lineStart, 1, lineEnd - lineStart, chapterFile);
-                    fwrite(" ", 1, 1, chapterFile);
+                    if(codegraph)
+                        fwrite("\n", 1, 1, chapterFile);
+                    else
+                        fwrite(" ", 1, 1, chapterFile);
                 }
                 else
                 {
-                    if(paragraphEnd == NULL)
+                    if(!codegraph && !linkgraph)
                     {
-                        fwrite(lineStart, 1, chapterTexts[i].length - (lineStart - chapterTexts[i].body), chapterFile);
+                        if(paragraphEnd == chapterTexts[i].body + chapterTexts[i].length - 1)
+                        {
+                            fwrite(lineStart, 1, chapterTexts[i].length - (lineStart - chapterTexts[i].body), chapterFile);
+                        }
+                        else
+                        {
+                            fwrite(lineStart, 1, paragraphEnd - lineStart, chapterFile);
+                        }
+                        fwrite("</p>", 1, 4, chapterFile);
                     }
-                    else
+                    else if(codegraph)
+                        fwrite("</code></pre>", 1, 13, chapterFile);
+                    else if(linkgraph)
                     {
-                        fwrite(lineStart, 1, paragraphEnd - lineStart, chapterFile);
+                        fwrite(" <a href=\"", 1, 10, chapterFile);
+                        if(i == chapterCount - 1)
+                        {
+                            fputs("Dangling next link on last chapter.", stderr);
+                            exit(EXIT_FAILURE);
+                        }
+
+                        fwrite(chapterTitles[i + 1].title, 1, chapterTitles[i + 1].length, chapterFile);
+                        fwrite(".html\" style=\"color:initial\">next</a>.</p>", 1, 42, chapterFile);
                     }
-                    fwrite("</p>", 1, 4, chapterFile);
+
                     break;
                 }
 
@@ -372,11 +436,13 @@ void outputBook(char* outputDirectoryPath)
             }
             while(true);
 
-            if(paragraphEnd == NULL)
+            if(paragraphEnd == chapterTexts[i].body + chapterTexts[i].length - 1)
                 break;
 
             paragraphStart = paragraphEnd + 2;
             paragraphEnd = strstr(paragraphStart, "\n\n");
+            if(paragraphEnd == NULL)
+                paragraphEnd = chapterTexts[i].body + chapterTexts[i].length - 1;
         }
         while(true);
         fwrite("</div>", 1, 6, chapterFile);
